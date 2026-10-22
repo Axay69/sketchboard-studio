@@ -137,25 +137,20 @@ export function CanvasStage({
 
   const startPan = (e: React.PointerEvent) => {
     setPanning(true);
+    let lastX = e.clientX;
+    let lastY = e.clientY;
+    const track = (ev: PointerEvent) => {
+      lastX = ev.clientX;
+      lastY = ev.clientY;
+    };
+    window.addEventListener("pointermove", track);
     beginDrag(
       { kind: "pan", sx: e.clientX, sy: e.clientY, start: viewRef.current },
       (_w, st) => {
         if (st.kind !== "pan") return;
-        onViewChange({ ...st.start, x: st.start.x + (lastClientX - st.sx), y: st.start.y + (lastClientY - st.sy) });
+        onViewChange({ ...st.start, x: st.start.x + (lastX - e.clientX), y: st.start.y + (lastY - e.clientY) });
       },
-    );
-    // Track raw client position via closure variables updated on move.
-    let lastClientX = e.clientX;
-    let lastClientY = e.clientY;
-    const track = (ev: PointerEvent) => {
-      lastClientX = ev.clientX;
-      lastClientY = ev.clientY;
-    };
-    window.addEventListener("pointermove", track);
-    window.addEventListener(
-      "pointerup",
       () => window.removeEventListener("pointermove", track),
-      { once: true },
     );
   };
 
