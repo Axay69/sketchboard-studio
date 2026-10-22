@@ -224,10 +224,10 @@ export function Editor() {
           </button>
         </div>
         <div className="flex -space-x-1.5">
-          <div className="h-6 w-6 rounded-full border-2 border-panel bg-[oklch(0.66_0.16_243)] text-center text-[10px] font-semibold leading-6 text-primary-foreground">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-panel bg-primary text-[10px] font-semibold text-primary-foreground">
             A
           </div>
-          <div className="h-6 w-6 rounded-full border-2 border-panel bg-[oklch(0.75_0.15_145)] text-center text-[10px] font-semibold leading-6 text-primary-foreground">
+          <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-panel bg-secondary text-[10px] font-semibold text-secondary-foreground">
             K
           </div>
         </div>
