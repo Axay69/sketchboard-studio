@@ -88,8 +88,8 @@ export function Editor() {
 
   const undo = useCallback(() => {
     const past = pastRef.current;
-    if (past.length === 0) return;
     const prev = past[past.length - 1];
+    if (!prev) return;
     pastRef.current = past.slice(0, -1);
     futureRef.current = [shapesRef.current, ...futureRef.current];
     setShapes(prev);
@@ -99,8 +99,8 @@ export function Editor() {
 
   const redo = useCallback(() => {
     const future = futureRef.current;
-    if (future.length === 0) return;
     const next = future[0];
+    if (!next) return;
     futureRef.current = future.slice(1);
     pastRef.current = [...pastRef.current, shapesRef.current];
     setShapes(next);
@@ -192,7 +192,8 @@ export function Editor() {
       if (!meta) {
         const k = e.key.toLowerCase();
         const map: Record<string, Tool> = { v: "select", f: "frame", r: "rect", o: "ellipse", l: "line", t: "text", h: "hand" };
-        if (k in map) setTool(map[k]);
+        const nextTool = map[k];
+        if (nextTool) setTool(nextTool);
       }
     };
     window.addEventListener("keydown", onKey);

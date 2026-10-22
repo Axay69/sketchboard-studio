@@ -166,7 +166,10 @@ export function PropertiesPanel({ selected, onChange, onHistoryPush }: Propertie
               max={100}
               step={1}
               value={[Math.round((single?.opacity ?? 1) * 100)]}
-              onValueChange={([v]) => patch({ opacity: v / 100 })}
+              onValueChange={(vals) => {
+                const v = vals[0];
+                if (v !== undefined) patch({ opacity: v / 100 });
+              }}
               onPointerDown={onHistoryPush}
               className="py-1"
             />
