@@ -7,11 +7,10 @@ import { Toolbar } from "@/components/editor/Toolbar";
 import { Button } from "@/components/ui/button";
 import { createShape, type Shape, type Tool, type View } from "@/lib/canvas-types";
 
-// Seed shapes use stable IDs so SSR and client render identical HTML.
-let seedCounter = 0;
-function seeded(type: Shape["type"], x: number, y: number, w: number, h: number): Shape {
+// Seed shapes use fixed IDs so SSR and client render identical HTML.
+function seeded(id: string, type: Shape["type"], x: number, y: number, w: number, h: number): Shape {
   const s = createShape(type, x, y, w, h);
-  s.id = `seed_${++seedCounter}`;
+  s.id = id;
   return s;
 }
 
