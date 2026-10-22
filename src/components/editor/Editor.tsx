@@ -7,45 +7,53 @@ import { Toolbar } from "@/components/editor/Toolbar";
 import { Button } from "@/components/ui/button";
 import { createShape, type Shape, type Tool, type View } from "@/lib/canvas-types";
 
+// Seed shapes use stable IDs so SSR and client render identical HTML.
+let seedCounter = 0;
+function seeded(type: Shape["type"], x: number, y: number, w: number, h: number): Shape {
+  const s = createShape(type, x, y, w, h);
+  s.id = `seed_${++seedCounter}`;
+  return s;
+}
+
 function seedShapes(): Shape[] {
-  const frame = createShape("frame", 80, 70, 440, 320);
+  const frame = seeded("frame", 80, 70, 440, 320);
   frame.name = "Hero card";
-  const block = createShape("rect", 116, 130, 180, 140);
+  const block = seeded("rect", 116, 130, 180, 140);
   block.fill = "#0d99ff";
   block.radius = 12;
   block.name = "Accent block";
-  const dot = createShape("ellipse", 330, 140, 130, 130);
+  const dot = seeded("ellipse", 330, 140, 130, 130);
   dot.fill = "#f2b418";
   dot.name = "Sun";
-  const title = createShape("text", 116, 296, 260, 36);
+  const title = seeded("text", 116, 296, 260, 36);
   title.text = "Design anything";
   title.fontSize = 28;
   title.fontWeight = 600;
   title.fill = "#1e1e1e";
   title.name = "Title";
 
-  const card = createShape("rect", 590, 110, 240, 170);
+  const card = seeded("rect", 590, 110, 240, 170);
   card.fill = "#ffffff";
   card.stroke = "#d9d9d9";
   card.strokeWidth = 1;
   card.radius = 12;
   card.name = "Card";
-  const label = createShape("text", 610, 140, 200, 30);
+  const label = seeded("text", 610, 140, 200, 30);
   label.text = "Ship faster";
   label.fontSize = 22;
   label.fontWeight = 600;
   label.fill = "#1e1e1e";
   label.name = "Card title";
-  const body = createShape("text", 610, 178, 200, 60);
+  const body = seeded("text", 610, 178, 200, 60);
   body.text = "A tiny canvas demo with frames, shapes and text.";
   body.fontSize = 13;
   body.fontWeight = 400;
   body.fill = "#666666";
   body.name = "Card body";
 
-  const divider = createShape("line", 80, 440, 300, 0);
+  const divider = seeded("line", 80, 440, 300, 0);
   divider.name = "Divider";
-  const caption = createShape("text", 590, 300, 220, 24);
+  const caption = seeded("text", 590, 300, 220, 24);
   caption.text = "Select me →";
   caption.fontSize = 14;
   caption.fontWeight = 500;
