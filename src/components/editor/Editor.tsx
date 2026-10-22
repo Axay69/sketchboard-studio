@@ -15,44 +15,44 @@ function seeded(id: string, type: Shape["type"], x: number, y: number, w: number
 }
 
 function seedShapes(): Shape[] {
-  const frame = seeded("frame", 80, 70, 440, 320);
+  const frame = seeded("seed_frame", "frame", 80, 70, 440, 320);
   frame.name = "Hero card";
-  const block = seeded("rect", 116, 130, 180, 140);
+  const block = seeded("seed_block", "rect", 116, 130, 180, 140);
   block.fill = "#0d99ff";
   block.radius = 12;
   block.name = "Accent block";
-  const dot = seeded("ellipse", 330, 140, 130, 130);
+  const dot = seeded("seed_dot", "ellipse", 330, 140, 130, 130);
   dot.fill = "#f2b418";
   dot.name = "Sun";
-  const title = seeded("text", 116, 296, 260, 36);
+  const title = seeded("seed_title", "text", 116, 296, 260, 36);
   title.text = "Design anything";
   title.fontSize = 28;
   title.fontWeight = 600;
   title.fill = "#1e1e1e";
   title.name = "Title";
 
-  const card = seeded("rect", 590, 110, 240, 170);
+  const card = seeded("seed_card", "rect", 590, 110, 240, 170);
   card.fill = "#ffffff";
   card.stroke = "#d9d9d9";
   card.strokeWidth = 1;
   card.radius = 12;
   card.name = "Card";
-  const label = seeded("text", 610, 140, 200, 30);
+  const label = seeded("seed_label", "text", 610, 140, 200, 30);
   label.text = "Ship faster";
   label.fontSize = 22;
   label.fontWeight = 600;
   label.fill = "#1e1e1e";
   label.name = "Card title";
-  const body = seeded("text", 610, 178, 200, 60);
+  const body = seeded("seed_body", "text", 610, 178, 200, 60);
   body.text = "A tiny canvas demo with frames, shapes and text.";
   body.fontSize = 13;
   body.fontWeight = 400;
   body.fill = "#666666";
   body.name = "Card body";
 
-  const divider = seeded("line", 80, 440, 300, 0);
+  const divider = seeded("seed_divider", "line", 80, 440, 300, 0);
   divider.name = "Divider";
-  const caption = seeded("text", 590, 300, 220, 24);
+  const caption = seeded("seed_caption", "text", 590, 300, 220, 24);
   caption.text = "Select me →";
   caption.fontSize = 14;
   caption.fontWeight = 500;
