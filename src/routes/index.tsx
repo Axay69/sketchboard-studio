@@ -1,24 +1,27 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Editor } from "@/components/editor/Editor";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Fig Canvas — Figma-style editor demo" },
+      {
+        name: "description",
+        content:
+          "A Figma-style canvas editor demo: draw frames, shapes, lines and text, then move, resize and style them with layers and properties panels.",
+      },
+      { property: "og:title", content: "Fig Canvas — Figma-style editor demo" },
+      {
+        property: "og:description",
+        content: "Draw frames, shapes, lines and text on an infinite canvas with layers, properties, undo and zoom.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  return <Editor />;
 }
