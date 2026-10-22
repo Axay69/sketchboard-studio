@@ -12,6 +12,7 @@ import {
 } from "@/lib/canvas-types";
 
 type Handle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+type World = { x: number; y: number };
 
 interface CanvasStageProps {
   shapes: Shape[];
@@ -38,6 +39,12 @@ function clampZoom(z: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 }
 
+function centeredZoom(v: View, zoom: number, cx: number, cy: number): View {
+  const wx = (cx - v.x) / v.zoom;
+  const wy = (cy - v.y) / v.zoom;
+  return { zoom, x: cx - wx * zoom, y: cy - wy * zoom };
+}
+
 export function CanvasStage({
   shapes,
   selectedIds,
@@ -52,20 +59,21 @@ export function CanvasStage({
   onEditingChange,
 }: CanvasStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<DragState | null>(null);
   const viewRef = useRef(view);
   viewRef.current = view;
   const shapesRef = useRef(shapes);
   shapesRef.current = shapes;
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [panning, setPanning] = useState(false);
 
-  const toWorld = useCallback((clientX: number, clientY: number) => {
+  const toWorld = useCallback((clientX: number, clientY: number): World => {
     const rect = containerRef.current?.getBoundingClientRect();
     const v = viewRef.current;
-    const rx = clientX - (rect?.left ?? 0);
-    const ry = clientY - (rect?.top ?? 0);
-    return { x: (rx - v.x) / v.zoom, y: (ry - v.y) / v.zoom };
+    return {
+      x: (clientX - (rect?.left ?? 0) - v.x) / v.zoom,
+      y: (clientY - (rect?.top ?? 0) - v.y) / v.zoom,
+    };
   }, []);
 
   // Space bar temporarily activates the hand/pan cursor.
@@ -98,12 +106,8 @@ export function CanvasStage({
       const rect = el.getBoundingClientRect();
       const v = viewRef.current;
       if (e.ctrlKey || e.metaKey) {
-        const cx = e.clientX - rect.left;
-        const cy = e.clientY - rect.top;
-        const wx = (cx - v.x) / v.zoom;
-        const wy = (cy - v.y) / v.zoom;
         const zoom = clampZoom(v.zoom * Math.exp(-e.deltaY * 0.0022));
-        onViewChange({ zoom, x: cx - wx * zoom, y: cy - wy * zoom });
+        onViewChange(centeredZoom(v, zoom, e.clientX - rect.left, e.clientY - rect.top));
       } else {
         onViewChange({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
       }
@@ -115,16 +119,15 @@ export function CanvasStage({
   const beginDrag = useCallback(
     (
       state: DragState,
-      onMove: (e: PointerEvent, world: { x: number; y: number }) => void,
-      onUp?: (e: PointerEvent, world: { x: number; y: number }) => void,
+      onMove: (world: World, state: DragState) => void,
+      onUp?: (world: World, state: DragState) => void,
     ) => {
-      dragRef.current = state;
-      const move = (e: PointerEvent) => onMove(e, toWorld(e.clientX, e.clientY));
+      const move = (e: PointerEvent) => onMove(toWorld(e.clientX, e.clientY), state);
       const up = (e: PointerEvent) => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
-        dragRef.current = null;
-        onUp?.(e, toWorld(e.clientX, e.clientY));
+        setPanning(false);
+        onUp?.(toWorld(e.clientX, e.clientY), state);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
@@ -133,10 +136,27 @@ export function CanvasStage({
   );
 
   const startPan = (e: React.PointerEvent) => {
-    beginDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, start: viewRef.current }, (ev) => {
-      const s = dragRef.current as Extract<DragState, { kind: "pan" }>;
-      onViewChange({ ...s.start, x: s.start.x + (ev.clientX - s.sx), y: s.start.y + (ev.clientY - s.sy) });
-    });
+    setPanning(true);
+    beginDrag(
+      { kind: "pan", sx: e.clientX, sy: e.clientY, start: viewRef.current },
+      (_w, st) => {
+        if (st.kind !== "pan") return;
+        onViewChange({ ...st.start, x: st.start.x + (lastClientX - st.sx), y: st.start.y + (lastClientY - st.sy) });
+      },
+    );
+    // Track raw client position via closure variables updated on move.
+    let lastClientX = e.clientX;
+    let lastClientY = e.clientY;
+    const track = (ev: PointerEvent) => {
+      lastClientX = ev.clientX;
+      lastClientY = ev.clientY;
+    };
+    window.addEventListener("pointermove", track);
+    window.addEventListener(
+      "pointerup",
+      () => window.removeEventListener("pointermove", track),
+      { once: true },
+    );
   };
 
   const onStagePointerDown = (e: React.PointerEvent) => {
@@ -152,22 +172,34 @@ export function CanvasStage({
       onEditingChange(null);
       onHistoryPush();
       const shape = createShape(tool, world.x, world.y, 0, 0);
-      onChange((prev) => [...prev, shape]);
       const id = shape.id;
+      onChange((prev) => [...prev, shape]);
       beginDrag(
         { kind: "create", sx: world.x, sy: world.y, id },
-        (_ev, w) => {
-          const x = Math.min(w.x, w.x < w.x ? w.x : w.x);
+        (w, st) => {
+          if (st.kind !== "create") return;
+          const x = Math.min(st.sx, w.x);
+          const y = Math.min(st.sy, w.y);
+          const nw = Math.abs(w.x - st.sx);
+          const nh = Math.abs(w.y - st.sy);
+          onChange((prev) => prev.map((s) => (s.id === id ? { ...s, x, y, w: nw, h: nh } : s)));
+        },
+        (_w, st) => {
+          if (st.kind !== "create") return;
           onChange((prev) =>
-            prev.map((s) =>
-              s.id === id
-                ? {
-                    ...s,
-                    x: Math.min(sx0(w.x), sx0(w.x)) === 0 ? Math.min(w.x, sx0Ref.current) : s.x,
-                  }
-                : s,
-            ),
+            prev.map((s) => {
+              if (s.id !== id) return s;
+              if (s.w < 3 && s.h < 3) {
+                if (s.type === "text") return { ...s, w: 160, h: 36 };
+                if (s.type === "line") return { ...s, w: 140, h: 0 };
+                return { ...s, w: 120, h: 120 };
+              }
+              return s;
+            }),
           );
+          onToolChange("select");
+          onSelect([id]);
+          if (shape.type === "text") onEditingChange(id);
         },
       );
       return;
@@ -175,24 +207,23 @@ export function CanvasStage({
     // Marquee select on empty canvas.
     onSelect([]);
     onEditingChange(null);
-    setMarquee({ x: 0, y: 0, w: 0, h: 0 });
+    setMarquee({ x: world.x, y: world.y, w: 0, h: 0 });
     beginDrag(
       { kind: "marquee", sx: world.x, sy: world.y },
-      (_ev, w) => {
+      (w, st) => {
+        if (st.kind !== "marquee") return;
         setMarquee({
-          x: Math.min(w.x, dragRef.current ? (dragRef.current as Extract<DragState, { kind: "marquee" }>).sx : w.x),
-          y: Math.min(w.y, dragRef.current ? (dragRef.current as Extract<DragState, { kind: "marquee" }>).sy : w.y),
-          w: Math.abs(w.x - (dragRef.current ? (dragRef.current as Extract<DragState, { kind: "marquee" }>).sx : w.x)),
-          h: Math.abs(w.y - (dragRef.current ? (dragRef.current as Extract<DragState, { kind: "marquee" }>).sy : w.y)),
+          x: Math.min(st.sx, w.x),
+          y: Math.min(st.sy, w.y),
+          w: Math.abs(w.x - st.sx),
+          h: Math.abs(w.y - st.sy),
         });
       },
-      (_ev, w) => {
-        const m = dragRef.current as Extract<DragState, { kind: "marquee" }> | null;
+      (w, st) => {
+        if (st.kind !== "marquee") return;
         setMarquee(null);
-        const rect = m
-          ? { x: Math.min(w.x, m.sx), y: Math.min(w.y, m.sy), w: Math.abs(w.x - m.sx), h: Math.abs(w.y - m.sy) }
-          : null;
-        if (rect && (rect.w > 2 || rect.h > 2)) {
+        const rect = { x: Math.min(st.sx, w.x), y: Math.min(st.sy, w.y), w: Math.abs(w.x - st.sx), h: Math.abs(w.y - st.sy) };
+        if (rect.w > 2 || rect.h > 2) {
           const hits = shapesRef.current
             .filter(
               (s) =>
@@ -223,11 +254,10 @@ export function CanvasStage({
     for (const s of shapesRef.current) {
       if (ids.includes(s.id)) origins.set(s.id, { x: s.x, y: s.y });
     }
-    const world = toWorld(e.clientX, e.clientY);
     beginDrag(
-      { kind: "move", sx: world.x, sy: world.y, origins },
-      (_ev, w) => {
-        const st = dragRef.current as Extract<DragState, { kind: "move" }>;
+      { kind: "move", sx: toWorld(e.clientX, e.clientY).x, sy: toWorld(e.clientX, e.clientY).y, origins },
+      (w, st) => {
+        if (st.kind !== "move") return;
         const dx = w.x - st.sx;
         const dy = w.y - st.sy;
         onChange((prev) =>
@@ -245,8 +275,8 @@ export function CanvasStage({
     onHistoryPush();
     beginDrag(
       { kind: "resize", handle, orig: { ...shape } },
-      (_ev, w) => {
-        const st = dragRef.current as Extract<DragState, { kind: "resize" }>;
+      (w, st) => {
+        if (st.kind !== "resize") return;
         const o = st.orig;
         const h = st.handle;
         let x = o.x;
@@ -276,15 +306,16 @@ export function CanvasStage({
   const zoomBy = (factor: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
     const v = viewRef.current;
-    const cx = (rect?.width ?? 800) / 2;
-    const cy = (rect?.height ?? 600) / 2;
-    const wx = (cx - v.x) / v.zoom;
-    const wy = (cy - v.y) / v.zoom;
-    const zoom = clampZoom(v.zoom * factor);
-    onViewChange({ zoom, x: cx - wx * zoom, y: cy - wy * zoom });
+    onViewChange(centeredZoom(v, clampZoom(v.zoom * factor), (rect?.width ?? 800) / 2, (rect?.height ?? 600) / 2));
   };
 
-  const fitToShapes = () => {
+  const zoomTo100 = () => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    onViewChange(centeredZoom(v, 1, (rect?.width ?? 800) / 2, (rect?.height ?? 600) / 2));
+  };
+
+  const fitToShapes = useCallback(() => {
     const visible = shapes.filter((s) => !s.hidden);
     if (visible.length === 0) return;
     const x1 = Math.min(...visible.map((s) => s.x));
@@ -292,24 +323,24 @@ export function CanvasStage({
     const x2 = Math.max(...visible.map((s) => s.x + s.w));
     const y2 = Math.max(...visible.map((s) => s.y + s.h));
     const rect = containerRef.current?.getBoundingClientRect();
-    const bw = x2 - x1;
-    const bh = y2 - y1;
+    const bw = Math.max(1, x2 - x1);
+    const bh = Math.max(1, y2 - y1);
     const zoom = clampZoom(Math.min(((rect?.width ?? 800) - 160) / bw, ((rect?.height ?? 600) - 160) / bh));
     onViewChange({
       zoom,
       x: (rect?.width ?? 800) / 2 - ((x1 + x2) / 2) * zoom,
       y: (rect?.height ?? 600) / 2 - ((y1 + y2) / 2) * zoom,
     });
-  };
+  }, [shapes, onViewChange]);
 
-  const zoomToFitRef = useRef(fitToShapes);
-  zoomToFitRef.current = fitToShapes;
+  const fitRef = useRef(fitToShapes);
+  fitRef.current = fitToShapes;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "0" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+      if (e.shiftKey && e.key.toUpperCase() === "0" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        zoomToFitRef.current();
+        fitRef.current();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -317,7 +348,7 @@ export function CanvasStage({
   }, []);
 
   const cursor =
-    spaceHeld || tool === "hand" ? (dragRef.current?.kind === "pan" ? "grabbing" : "grab") : tool === "select" ? "default" : "crosshair";
+    spaceHeld || tool === "hand" ? (panning ? "grabbing" : "grab") : tool === "select" ? "default" : "crosshair";
 
   const screen = (n: number) => n * view.zoom;
   const selected = shapes.filter((s) => selectedIds.includes(s.id));
@@ -346,7 +377,7 @@ export function CanvasStage({
       ]
     : [];
 
-  const editingShape = editingId ? shapes.find((s) => s.id === editingId) : null;
+  const editingShape = editingId ? shapes.find((s) => s.id === editingId) ?? null : null;
 
   return (
     <div
@@ -365,25 +396,25 @@ export function CanvasStage({
           .filter((s) => !s.hidden)
           .map((s) => {
             const isSelected = selectedIds.includes(s.id);
-            const common: React.CSSProperties = {
-              position: "absolute",
-              left: s.x,
-              top: s.y,
-              width: s.w,
-              height: s.h,
-              opacity: s.opacity,
-              outline: isSelected && s !== editingShape ? "1.5px solid var(--selection)" : undefined,
-              outlineOffset: 0,
-            };
             return (
               <div
                 key={s.id}
                 data-shape-id={s.id}
-                style={{ ...common, cursor: tool === "select" && !editingId ? "move" : undefined }}
+                style={{
+                  position: "absolute",
+                  left: s.x,
+                  top: s.y,
+                  width: s.w,
+                  height: s.type === "text" ? "auto" : s.h,
+                  minHeight: s.type === "text" ? s.h : undefined,
+                  opacity: s.opacity,
+                  outline: isSelected && s.id !== editingId ? `${1.5 / view.zoom}px solid var(--selection)` : undefined,
+                  cursor: tool === "select" && !editingId ? "move" : undefined,
+                }}
                 onPointerDown={(e) => startMove(e, s.id)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  if (s.type === "text" && tool === "select") {
+                  if (s.type === "text" && tool === "select" && s.id !== editingId) {
                     onHistoryPush();
                     onEditingChange(s.id);
                   }
@@ -391,7 +422,15 @@ export function CanvasStage({
               >
                 {s.type === "line" ? (
                   <svg width="100%" height="100%" overflow="visible">
-                    <line x1="0" y1={s.h} x2={s.w} y2="0" stroke={s.stroke} strokeWidth={Math.max(1, s.strokeWidth)} strokeLinecap="round" />
+                    <line
+                      x1="0"
+                      y1={s.h}
+                      x2={s.w}
+                      y2="0"
+                      stroke={s.stroke}
+                      strokeWidth={Math.max(1, s.strokeWidth)}
+                      strokeLinecap="round"
+                    />
                   </svg>
                 ) : s.type === "text" ? (
                   <div
@@ -401,7 +440,6 @@ export function CanvasStage({
                       color: s.fill,
                       lineHeight: 1.25,
                       whiteSpace: "pre-wrap",
-                      width: "100%",
                     }}
                   >
                     {s.text}
@@ -411,7 +449,7 @@ export function CanvasStage({
                     style={{
                       width: "100%",
                       height: "100%",
-                      background: s.type === "line" ? undefined : s.fill,
+                      background: s.fill,
                       border: s.strokeWidth > 0 ? `${s.strokeWidth}px solid ${s.stroke}` : undefined,
                       borderRadius: s.type === "ellipse" ? "50%" : s.radius,
                     }}
@@ -422,7 +460,7 @@ export function CanvasStage({
           })}
       </div>
 
-      {/* Screen-space overlay: frame labels, handles, marquee, text editor */}
+      {/* Screen-space overlay: frame labels, selection, handles, marquee, text editor */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {shapes
           .filter((s) => s.type === "frame" && !s.hidden)
@@ -460,7 +498,13 @@ export function CanvasStage({
                 width: HANDLE_SIZE,
                 height: HANDLE_SIZE,
                 cursor:
-                  h === "n" || h === "s" ? "ns-resize" : h === "e" || h === "w" ? "ew-resize" : h === "nw" || h === "se" ? "nwse-resize" : "nesw-resize",
+                  h === "n" || h === "s"
+                    ? "ns-resize"
+                    : h === "e" || h === "w"
+                      ? "ew-resize"
+                      : h === "nw" || h === "se"
+                        ? "nwse-resize"
+                        : "nesw-resize",
               }}
               onPointerDown={(e) => startResize(e, h, single)}
             />
@@ -469,7 +513,12 @@ export function CanvasStage({
         {marquee && (
           <div
             className="absolute border border-selection bg-selection-soft"
-            style={{ left: view.x + screen(marquee.x), top: view.y + screen(marquee.y), width: screen(marquee.w), height: screen(marquee.h) }}
+            style={{
+              left: view.x + screen(marquee.x),
+              top: view.y + screen(marquee.y),
+              width: screen(marquee.w),
+              height: screen(marquee.h),
+            }}
           />
         )}
 
@@ -481,7 +530,7 @@ export function CanvasStage({
               left: view.x + screen(editingShape.x),
               top: view.y + screen(editingShape.y),
               width: Math.max(80, screen(editingShape.w)),
-              height: Math.max(24, screen(editingShape.h)),
+              minHeight: Math.max(24, screen(editingShape.h)),
               fontSize: screen(editingShape.fontSize),
               fontWeight: editingShape.fontWeight,
               lineHeight: 1.25,
@@ -489,9 +538,7 @@ export function CanvasStage({
             }}
             value={editingShape.text}
             onPointerDown={(e) => e.stopPropagation()}
-            onChange={(e) =>
-              onChange((prev) => prev.map((s) => (s.id === editingShape.id ? { ...s, text: e.target.value } : s)))
-            }
+            onChange={(e) => onChange((prev) => prev.map((s) => (s.id === editingShape.id ? { ...s, text: e.target.value } : s)))}
             onBlur={() => onEditingChange(null)}
             onKeyDown={(e) => {
               if (e.key === "Escape") onEditingChange(null);
@@ -511,15 +558,7 @@ export function CanvasStage({
         </button>
         <button
           className="h-7 min-w-14 rounded-md px-1 text-xs font-medium tabular-nums text-foreground transition-colors hover:bg-accent"
-          onClick={() => {
-            const v = viewRef.current;
-            const rect = containerRef.current?.getBoundingClientRect();
-            const cx = (rect?.width ?? 800) / 2;
-            const cy = (rect?.height ?? 600) / 2;
-            const wx = (cx - v.x) / v.zoom;
-            const wy = (cy - v.y) / v.zoom;
-            onViewChange({ zoom: 1, x: cx - wx, y: cy - wy });
-          }}
+          onClick={zoomTo100}
         >
           {Math.round(view.zoom * 100)}%
         </button>
@@ -542,7 +581,3 @@ export function CanvasStage({
     </div>
   );
 }
-
-// Helpers kept out of render for the create-drag path.
-let sx0 = (n: number) => n;
-const sx0Ref = { current: 0 };
